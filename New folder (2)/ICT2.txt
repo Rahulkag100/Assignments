@@ -1,0 +1,183 @@
+//DBHandler
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.Properties;
+
+public class DBHandler {
+	private static Connection con = null;
+	private static Properties props = new Properties();
+	
+	public Connection establishConnection() throws ClassNotFoundException, SQLException {
+	    try{
+			
+			FileInputStream fis = null;
+			fis = new FileInputStream("db.properties");
+			props.load(fis);
+			
+			// load the Driver Class
+			Class.forName(props.getProperty("db.classname"));
+
+			// create the connection now
+            con = DriverManager.getConnection(props.getProperty("db.url"),props.getProperty("db.username"),props.getProperty("db.password"));
+	    }
+	    catch(IOException e){
+	        e.printStackTrace();
+	    }
+		return con;
+	}
+}
+
+//Electricitybill.java
+public class ElectricityBill {
+	private String consumerNumber;
+	private String consumerName;
+	private String consumerAddress;
+	private int unitsConsumed;
+	private double billAmount;
+	
+	public String getConsumerNumber() {
+		return this.consumerNumber;
+	}
+	public void setConsumerNumber(String consumerNumber) {
+		this.consumerNumber = consumerNumber;
+	}
+	public String getConsumerName() {
+		return this.consumerName;
+	}
+	public void setConsumerName(String consumerName) {
+		this.consumerName = consumerName;
+	}
+	public String getConsumerAddress() {
+		return this.consumerAddress;
+	}
+	public void setConsumerAddress(String consumerAddress) {
+		this.consumerAddress = consumerAddress;
+	}
+	public int getUnitsConsumed() {
+		return this.unitsConsumed;
+	}
+	public void setUnitsConsumed(int unitsConsumed) {
+		this.unitsConsumed = unitsConsumed;
+	}
+	public double getBillAmount() {
+		return this.billAmount;
+	}
+	public void setBillAmount(double billAmount) {
+		this.billAmount = billAmount;
+	}
+	
+	public void calculateBillAmount() {
+		if(this.unitsConsumed <= 100) {
+			this.billAmount = 0;
+		} else if(this.unitsConsumed > 100 && this.unitsConsumed <= 300) {
+			this.billAmount = (this.unitsConsumed - 100) * 1.5;
+		} else if(this.unitsConsumed > 300 && this.unitsConsumed <= 600) {
+			this.billAmount = 200 * 1.5 + (this.unitsConsumed - 300) * 3.5;
+		} else if(this.unitsConsumed > 600 && this.unitsConsumed <= 1000) {
+			this.billAmount = 200 * 1.5 + 300 * 3.5 + (this.unitsConsumed - 600) * 5.5;
+		} else {
+			this.billAmount = 200 * 1.5 + 300 * 3.5 + 400 * 5.5 + (this.unitsConsumed - 1000) * 7.5;
+		}
+	}
+}
+
+//ElectricityBoard.java
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
+public class ElectricityBoard {
+	public List<ElectricityBill>generateBill(String filePath) {
+		try {
+			Scanner sc = new Scanner(new File(filePath));
+			List<ElectricityBill> consumerList = new ArrayList<ElectricityBill>();
+			while(sc.hasNextLine()) {
+				String tokens[] = sc.nextLine().split(",");
+				//System.out.println(tokens[1]);
+				try {
+					if(validate(tokens[0])) {
+						ElectricityBill customer = new ElectricityBill();
+						customer.setConsumerNumber(tokens[0]);
+						customer.setConsumerName(tokens[1]);
+						customer.setConsumerAddress(tokens[2]);
+						customer.setUnitsConsumed(Integer.parseInt(tokens[3]));
+						customer.calculateBillAmount();
+						consumerList.add(customer);
+					}
+				} catch (InvalidConsumerNumberException e) {
+					//System.out.println(e.getMessage());
+				}
+			}
+			sc.close();
+			return consumerList;
+		} catch (FileNotFoundException e) {
+			//System.out.println(e.getMessage());
+			return null;
+		} 
+	}
+	
+	public void addBill(List<ElectricityBill>billList) {
+		try {
+			DBHandler dbDriver = new DBHandler();
+			Connection con = dbDriver.establishConnection();
+			for(int i = 0; i < billList.size(); i++) {
+				String query = "INSERT INTO ElectricityBill VALUES (?,?,?,?,?)";
+				PreparedStatement stmt = con.prepareStatement(query);
+				stmt.setString(1, billList.get(i).getConsumerNumber());
+				stmt.setString(2, billList.get(i).getConsumerName());
+				stmt.setString(3, billList.get(i).getConsumerAddress());
+				stmt.setInt(4, billList.get(i).getUnitsConsumed());
+				stmt.setFloat(5, (float)billList.get(i).getBillAmount());
+				stmt.executeUpdate();
+			}
+		} catch (Exception e) {
+			
+		}
+	}
+	boolean validate(String consumerNumber) throws InvalidConsumerNumberException {
+		boolean result;
+		if(consumerNumber.matches("0[0-9]{9}")) {
+			result = true;
+		} else {
+			throw new InvalidConsumerNumberException("Invalid Consumer Number");
+		}
+		return result;
+	}
+}
+
+//InvalidConsumerNumberException
+public class InvalidConsumerNumberException extends Exception {
+	public InvalidConsumerNumberException(String message) {
+		super(message);
+	}
+}
+
+//MAin.java
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
+public class Main {
+
+	public static void main(String[] args) {
+		String fileName;
+		List<ElectricityBill> billList = new ArrayList<ElectricityBill>();
+		Scanner sc = new Scanner(System.in);
+		System.out.println("Enter the file name:");
+		fileName = sc.nextLine();
+		ElectricityBoard obj = new ElectricityBoard();
+		billList = obj.generateBill(fileName);
+		for(int i = 0; i < billList.size(); i++) {
+			System.out.println(billList.get(i).getConsumerNumber() + "\t" + billList.get(i).getConsumerName() + "\t" + billList.get(i).getConsumerAddress() + "\t" + billList.get(i).getUnitsConsumed() + "\t" + billList.get(i).getBillAmount());
+		}
+		obj.addBill(billList);
+		sc.close();
+	}
+}
